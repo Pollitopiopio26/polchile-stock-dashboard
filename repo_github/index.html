@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #F4F3EF; --surface: #FFFFFF; --text: #18181A; --text-2: #5C5B58; --text-3: #9A9894;
@@ -75,6 +76,17 @@
   .modal-form input { width:100%; padding: 11px 14px; border: 2px solid var(--border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; outline:none; }
   .modal-form input:focus { border-color: var(--fam-a); }
   .modal-form p.modal-title { font-weight:700; margin-bottom: 14px; font-size: 15px; }
+
+  .kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .kpi-card { background: var(--surface); border:1px solid var(--border); border-radius: var(--r); padding: 16px 18px; }
+  .kpi-label { font-size: 11px; text-transform: uppercase; color: var(--text-3); font-weight:700; letter-spacing:0.4px; margin-bottom: 6px; }
+  .kpi-value { font-size: 22px; font-weight: 700; }
+  .chart-card { background: var(--surface); border:1px solid var(--border); border-radius: var(--r); padding: 18px; margin-bottom: 20px; }
+  .chart-card h3 { font-size: 14px; margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; }
+  .chart-wrap { position: relative; height: 320px; }
+  .toggle-mini { display:flex; gap:6px; }
+  .toggle-mini button { font-size: 11px; padding: 5px 10px; border-radius: 14px; border:1px solid var(--border); background: var(--bg); cursor:pointer; font-weight:600; color: var(--text-2); }
+  .toggle-mini button.active { background: var(--text); color:#fff; border-color: var(--text); }
 </style>
 </head>
 <body>
@@ -151,9 +163,6 @@ function FamiliaBlock({ nombre, items, bodegaActiva, onImgClick, cfgOverride }) 
                 </td>
                 <td className="precio">{p.precio ? p.precio.toLocaleString('es-CL', {style:'currency', currency:'CLP'}) : 'Consultar'}</td>
                 <td>
-                  <div className="bar-wrap">
-                    <div className="bar-fill" style={{ width: pct + '%', backgroundColor: cfg.color }}></div>
-                  </div>
                   <div className="stock-nums">
                     <span>Actual: <b>{actualMostrado}</b></span>
                     <span>Total: <b>{p.stockTotal || '-'}</b></span>
@@ -399,7 +408,237 @@ function ResetPasswordScreen({ onDone }) {
   );
 }
 
-function Dashboard({ session, onLogout }) {
+// Wrapper mínimo sobre Chart.js (canvas imperativo), sin depender de
+// react-chartjs-2 para no necesitar un bundler.
+function ChartCanvas({ type, data, options }) {
+  const canvasRef = React.useRef(null);
+  const chartRef = React.useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, { type, data, options });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [type, data, options]);
+
+  return (
+    <div className="chart-wrap">
+      <canvas ref={canvasRef}></canvas>
+    </div>
+  );
+}
+
+const PALETA = ["#6B62D4", "#0284c7", "#ea580c", "#16a34a", "#b45309", "#C94F28", "#334155", "#9A9894"];
+
+function VentasAdminView() {
+  const [ventas, setVentas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [metricaTop, setMetricaTop] = useState('valor'); // 'valor' | 'cantidad'
+
+  const fetchData = () => {
+    setLoading(true);
+    setError(null);
+    supabaseClient.from('ventas').select('*')
+      .then(({ data, error }) => {
+        if (error) { setError(error.message); setLoading(false); return; }
+        setVentas(data || []);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const datosFiltrados = useMemo(() => {
+    const term = search.toLowerCase();
+    if (!term) return ventas;
+    return ventas.filter(v =>
+      (v.descripcion || '').toLowerCase().includes(term) ||
+      (v.codigo || '').toLowerCase().includes(term)
+    );
+  }, [ventas, search]);
+
+  // Agregación por producto
+  const porProducto = useMemo(() => {
+    const map = {};
+    datosFiltrados.forEach(v => {
+      const codigo = v.codigo;
+      if (!map[codigo]) map[codigo] = { codigo, descripcion: v.descripcion || codigo, cantidad: 0, valor: 0 };
+      map[codigo].cantidad += parseFloat(v.cantidad) || 0;
+      map[codigo].valor += parseFloat(v.valor_total) || 0;
+    });
+    return Object.values(map).sort((a, b) => b[metricaTop] - a[metricaTop]);
+  }, [datosFiltrados, metricaTop]);
+
+  // Agregación mensual
+  const porMes = useMemo(() => {
+    const map = {};
+    datosFiltrados.forEach(v => {
+      if (!v.fecha) return;
+      const mes = String(v.fecha).slice(0, 7); // YYYY-MM
+      if (!map[mes]) map[mes] = { mes, valor: 0, cantidad: 0 };
+      map[mes].valor += parseFloat(v.valor_total) || 0;
+      map[mes].cantidad += parseFloat(v.cantidad) || 0;
+    });
+    return Object.values(map).sort((a, b) => a.mes.localeCompare(b.mes));
+  }, [datosFiltrados]);
+
+  // Agregación por bodega
+  const porBodega = useMemo(() => {
+    const map = {};
+    datosFiltrados.forEach(v => {
+      const b = v.bodega_nombre || 'Sin bodega';
+      map[b] = (map[b] || 0) + (parseFloat(v.valor_total) || 0);
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [datosFiltrados]);
+
+  const kpis = useMemo(() => {
+    const totalValor = datosFiltrados.reduce((s, v) => s + (parseFloat(v.valor_total) || 0), 0);
+    const totalCantidad = datosFiltrados.reduce((s, v) => s + (parseFloat(v.cantidad) || 0), 0);
+    const notasUnicas = new Set(datosFiltrados.map(v => v.nota_de_venta)).size;
+    const ticketProm = notasUnicas > 0 ? totalValor / notasUnicas : 0;
+    return { totalValor, totalCantidad, notasUnicas, ticketProm };
+  }, [datosFiltrados]);
+
+  const fmtCLP = (n) => n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+
+  const top15 = porProducto.slice(0, 15);
+
+  const dataTop = {
+    labels: top15.map(p => p.descripcion.length > 22 ? p.descripcion.slice(0, 22) + '…' : p.descripcion),
+    datasets: [{
+      label: metricaTop === 'valor' ? 'Ventas ($)' : 'Unidades vendidas',
+      data: top15.map(p => metricaTop === 'valor' ? p.valor : p.cantidad),
+      backgroundColor: '#6B62D4',
+      borderRadius: 6
+    }]
+  };
+
+  const dataMes = {
+    labels: porMes.map(m => m.mes),
+    datasets: [{
+      label: 'Ventas mensuales ($)',
+      data: porMes.map(m => m.valor),
+      borderColor: '#0284c7',
+      backgroundColor: 'rgba(2,132,199,0.12)',
+      fill: true,
+      tension: 0.3
+    }]
+  };
+
+  const dataBodega = {
+    labels: porBodega.map(([b]) => b),
+    datasets: [{
+      data: porBodega.map(([, v]) => v),
+      backgroundColor: PALETA
+    }]
+  };
+
+  const optsBar = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    indexAxis: 'y'
+  };
+  const optsLine = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } }
+  };
+  const optsPie = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'right' } }
+  };
+
+  return (
+    <React.Fragment>
+      {error && <div className="error-msg">⚠️ {error}</div>}
+
+      <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loading ? (
+        <div className="loading">CARGANDO VENTAS...</div>
+      ) : datosFiltrados.length === 0 ? (
+        <div className="loading">Sin datos de ventas todavía.</div>
+      ) : (
+        <React.Fragment>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-label">Ventas totales</div>
+              <div className="kpi-value">{fmtCLP(kpis.totalValor)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Unidades vendidas</div>
+              <div className="kpi-value">{kpis.totalCantidad.toLocaleString('es-CL')}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">N° notas de venta</div>
+              <div className="kpi-value">{kpis.notasUnicas.toLocaleString('es-CL')}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Ticket promedio</div>
+              <div className="kpi-value">{fmtCLP(kpis.ticketProm)}</div>
+            </div>
+          </div>
+
+          <div className="chart-card">
+            <h3>
+              <span>Top 15 productos más vendidos</span>
+              <div className="toggle-mini">
+                <button className={metricaTop === 'valor' ? 'active' : ''} onClick={() => setMetricaTop('valor')}>Por $</button>
+                <button className={metricaTop === 'cantidad' ? 'active' : ''} onClick={() => setMetricaTop('cantidad')}>Por unidades</button>
+              </div>
+            </h3>
+            <ChartCanvas type="bar" data={dataTop} options={optsBar} />
+          </div>
+
+          <div className="chart-card">
+            <h3>Ventas mensuales ($)</h3>
+            <ChartCanvas type="line" data={dataMes} options={optsLine} />
+          </div>
+
+          <div className="chart-card">
+            <h3>Ventas por bodega ($)</h3>
+            <ChartCanvas type="doughnut" data={dataBodega} options={optsPie} />
+          </div>
+
+          <div className="familia-section">
+            <div className="familia-head" style={{ backgroundColor: "#334155" }}>
+              <div className="familia-icon">🏆</div>
+              <div>
+                <div className="familia-name">Ranking completo</div>
+                <div className="familia-count">{porProducto.length} productos</div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{width:'50%'}}>Producto</th>
+                  <th style={{width:'20%', textAlign:'right'}}>Unidades</th>
+                  <th style={{width:'30%', textAlign:'right'}}>Ventas ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porProducto.map((p, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <div className="prod-name">{p.descripcion}</div>
+                      <div className="mono">{p.codigo}</div>
+                    </td>
+                    <td style={{textAlign:'right'}}>{p.cantidad.toLocaleString('es-CL')}</td>
+                    <td style={{textAlign:'right', fontWeight:600}}>{fmtCLP(p.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </React.Fragment>
+      )}
+    </React.Fragment>
+  );
+}
+
+function Dashboard({ session, onLogout, rol }) {
   const [productos, setProductos] = useState([]);
   const [bodegas, setBodegas] = useState([]);
   const [bodegaActiva, setBodegaActiva] = useState('Todas');
@@ -503,6 +742,9 @@ function Dashboard({ session, onLogout }) {
         <div className={"bodega-tab" + (vista === 'familia' ? ' active' : '')} onClick={() => setVista('familia')}>📦 Vista por Familia</div>
         <div className={"bodega-tab" + (vista === 'bodega' ? ' active' : '')} onClick={() => setVista('bodega')}>🏬 Vista por Bodega</div>
         <div className={"bodega-tab" + (vista === 'segunda' ? ' active segunda' : '')} onClick={() => setVista('segunda')}>🏷️ Productos de Segunda</div>
+        {rol === 'admin' && (
+          <div className={"bodega-tab" + (vista === 'ventas' ? ' active' : '')} onClick={() => setVista('ventas')}>📊 Análisis de Ventas</div>
+        )}
       </div>
 
       {vista === 'familia' && (
@@ -514,31 +756,37 @@ function Dashboard({ session, onLogout }) {
         </div>
       )}
 
-      <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
-
-      {loading ? (
-        <div className="loading">CARGANDO STOCK...</div>
-      ) : vista === 'familia' ? (
-        Object.keys(familiasAgrupadas).map(fam => (
-          <FamiliaBlock key={fam} nombre={fam} items={familiasAgrupadas[fam]} bodegaActiva={bodegaActiva}
-            onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })} />
-        ))
-      ) : vista === 'bodega' ? (
-        Object.keys(bodegasAgrupadas).map(bod => (
-          <FamiliaBlock key={bod} nombre={bod} items={bodegasAgrupadas[bod]} bodegaActiva={bod}
-            cfgOverride={{ color: "#334155", icon: "🏬" }}
-            onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })} />
-        ))
+      {vista === 'ventas' && rol === 'admin' ? (
+        <VentasAdminView />
       ) : (
-        Object.keys(segundaAgrupadaPorBodega).length > 0 ? (
-          Object.keys(segundaAgrupadaPorBodega).map(bod => (
-            <FamiliaBlock key={bod} nombre={bod} items={segundaAgrupadaPorBodega[bod]} bodegaActiva={bod}
-              cfgOverride={{ color: "#b45309", icon: "🏷️" }}
-              onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })} />
-          ))
-        ) : (
-          <div className="loading">Sin productos de segunda por ahora.</div>
-        )
+        <React.Fragment>
+          <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+
+          {loading ? (
+            <div className="loading">CARGANDO STOCK...</div>
+          ) : vista === 'familia' ? (
+            Object.keys(familiasAgrupadas).map(fam => (
+              <FamiliaBlock key={fam} nombre={fam} items={familiasAgrupadas[fam]} bodegaActiva={bodegaActiva}
+                onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })} />
+            ))
+          ) : vista === 'bodega' ? (
+            Object.keys(bodegasAgrupadas).map(bod => (
+              <FamiliaBlock key={bod} nombre={bod} items={bodegasAgrupadas[bod]} bodegaActiva={bod}
+                cfgOverride={{ color: "#334155", icon: "🏬" }}
+                onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })} />
+            ))
+          ) : (
+            Object.keys(segundaAgrupadaPorBodega).length > 0 ? (
+              Object.keys(segundaAgrupadaPorBodega).map(bod => (
+                <FamiliaBlock key={bod} nombre={bod} items={segundaAgrupadaPorBodega[bod]} bodegaActiva={bod}
+                  cfgOverride={{ color: "#b45309", icon: "🏷️" }}
+                  onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })} />
+              ))
+            ) : (
+              <div className="loading">Sin productos de segunda por ahora.</div>
+            )
+          )}
+        </React.Fragment>
       )}
 
       {imagenAmpliada && (
@@ -684,7 +932,7 @@ function App() {
     return <ProduccionView session={session} onLogout={onLogout} />;
   }
 
-  return <Dashboard session={session} onLogout={onLogout} />;
+  return <Dashboard session={session} onLogout={onLogout} rol={rol} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);

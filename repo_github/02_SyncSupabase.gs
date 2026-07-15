@@ -137,8 +137,59 @@ function sincronizarProductosSegunda_(ss) {
   Logger.log('Productos Segunda: ' + filas.length + ' filas sincronizadas.');
 }
 
+function sincronizarVentas_(ss) {
+  const hoja = ss.getSheetByName('Stock Vendido');
+  if (!hoja) { Logger.log("No se encontró 'Stock Vendido', se omite."); return; }
+
+  const data = hoja.getDataRange().getValues();
+  const headers = data[0].map(function(h){ return h.toString().trim().toLowerCase(); });
+
+  const idx = {
+    nota: headers.indexOf('nota_de_venta'),
+    bodegaId: headers.indexOf('bodega_id'),
+    bodegaNombre: headers.indexOf('bodega_nombre'),
+    codigo: headers.indexOf('codigo_de_prod'),
+    descripcion: headers.indexOf('descripcion'),
+    unidmed: headers.indexOf('unidmed'),
+    cantidad: headers.indexOf('q_solicitado'),
+    valor: headers.indexOf('valor_total'),
+    fecha: headers.indexOf('fecha_nv')
+  };
+
+  const filas = [];
+  for (let i = 1; i < data.length; i++) {
+    const fila = data[i];
+    const codigo = idx.codigo > -1 ? String(fila[idx.codigo] || '').trim() : '';
+    const nota = idx.nota > -1 ? fila[idx.nota] : null;
+    if (!codigo || !nota) continue;
+
+    let fechaStr = null;
+    if (idx.fecha > -1 && fila[idx.fecha]) {
+      const f = fila[idx.fecha];
+      fechaStr = (f instanceof Date)
+        ? Utilities.formatDate(f, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(f);
+    }
+
+    filas.push({
+      nota_de_venta: Number(nota),
+      bodega_id: idx.bodegaId > -1 ? String(fila[idx.bodegaId] || '').trim() : '',
+      bodega_nombre: idx.bodegaNombre > -1 ? String(fila[idx.bodegaNombre] || '').trim() : '',
+      codigo: codigo.toUpperCase(),
+      descripcion: idx.descripcion > -1 ? String(fila[idx.descripcion] || '').trim() : '',
+      unidmed: idx.unidmed > -1 ? String(fila[idx.unidmed] || '').trim() : '',
+      cantidad: parseFloat(fila[idx.cantidad]) || 0,
+      valor_total: parseFloat(fila[idx.valor]) || 0,
+      fecha: fechaStr
+    });
+  }
+
+  upsertSupabase_('ventas', filas);
+  Logger.log('Ventas: ' + filas.length + ' filas sincronizadas.');
+}
+
 /**
- * Función principal: corre las 3 sincronizaciones.
+ * Función principal: corre las 4 sincronizaciones.
  * Puedes ejecutarla manualmente desde el editor para probar.
  */
 function sincronizarTodo() {
@@ -146,8 +197,10 @@ function sincronizarTodo() {
   sincronizarCatalogo_(ss);
   sincronizarStock_(ss);
   sincronizarProductosSegunda_(ss);
+  sincronizarVentas_(ss);
   Logger.log('Sincronización completa.');
 }
+
 
 /**
  * Corre esto UNA SOLA VEZ para dejar la sincronización automática
