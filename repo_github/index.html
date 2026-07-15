@@ -70,6 +70,11 @@
   .login-card input:focus { border-color: var(--fam-a); }
   .login-card button { width:100%; padding: 11px; background: var(--text); color:#fff; border:none; border-radius: 8px; font-weight:bold; cursor:pointer; font-size: 14px; }
   .login-card .login-error { color: var(--bad); font-size: 12px; margin-top: 10px; }
+  .login-card .login-ok { color: var(--ok); font-size: 12px; margin-top: 10px; }
+  .link-btn { background:none; border:none; color: var(--fam-a); font-size: 12px; cursor:pointer; text-decoration: underline; margin-top: 4px; padding: 0; }
+  .modal-form input { width:100%; padding: 11px 14px; border: 2px solid var(--border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; outline:none; }
+  .modal-form input:focus { border-color: var(--fam-a); }
+  .modal-form p.modal-title { font-weight:700; margin-bottom: 14px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -242,6 +247,8 @@ function LoginScreen({ onLoggedIn }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [cargando, setCargando] = useState(false);
+  const [modoRecuperar, setModoRecuperar] = useState(false);
+  const [recuperarOk, setRecuperarOk] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -253,6 +260,41 @@ function LoginScreen({ onLoggedIn }) {
     onLoggedIn(data.session);
   };
 
+  const handleRecuperar = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setCargando(true);
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    setCargando(false);
+    if (error) { setError(error.message); return; }
+    setRecuperarOk(true);
+  };
+
+  if (modoRecuperar) {
+    return (
+      <div className="login-wrap">
+        <form className="login-card" onSubmit={handleRecuperar}>
+          <h1>Recuperar contraseña</h1>
+          <p>Te enviaremos un correo con un enlace para elegir una contraseña nueva.</p>
+          {recuperarOk ? (
+            <div className="login-ok">Listo, revisa tu correo ({email}) y sigue el enlace.</div>
+          ) : (
+            <React.Fragment>
+              <input type="email" placeholder="Correo" value={email} onChange={e => setEmail(e.target.value)} required />
+              <button type="submit" disabled={cargando}>{cargando ? 'Enviando...' : 'Enviar enlace'}</button>
+              {error && <div className="login-error">{error}</div>}
+            </React.Fragment>
+          )}
+          <button type="button" className="link-btn" onClick={() => { setModoRecuperar(false); setRecuperarOk(false); setError(null); }}>
+            ← Volver a ingresar
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={handleSubmit}>
@@ -262,6 +304,96 @@ function LoginScreen({ onLoggedIn }) {
         <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} required />
         <button type="submit" disabled={cargando}>{cargando ? 'Ingresando...' : 'Ingresar'}</button>
         {error && <div className="login-error">{error}</div>}
+        <button type="button" className="link-btn" onClick={() => setModoRecuperar(true)}>
+          ¿Olvidaste tu contraseña?
+        </button>
+      </form>
+    </div>
+  );
+
+}
+
+function ChangePasswordModal({ onClose }) {
+  const [pass1, setPass1] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(false);
+  const [cargando, setCargando] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (pass1.length < 6) { setError('Mínimo 6 caracteres.'); return; }
+    if (pass1 !== pass2) { setError('Las contraseñas no coinciden.'); return; }
+    setCargando(true);
+    const { error } = await supabaseClient.auth.updateUser({ password: pass1 });
+    setCargando(false);
+    if (error) { setError(error.message); return; }
+    setOk(true);
+  };
+
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <div className="lightbox-box" onClick={e => e.stopPropagation()} style={{ alignItems: 'stretch', minWidth: 300 }}>
+        <button className="lightbox-close" onClick={onClose}>✕</button>
+        {ok ? (
+          <div>
+            <p className="modal-title">Contraseña actualizada ✅</p>
+            <button className="btn" onClick={onClose} style={{ width: '100%' }}>Cerrar</button>
+          </div>
+        ) : (
+          <form className="modal-form" onSubmit={handleSubmit}>
+            <p className="modal-title">Cambiar contraseña</p>
+            <input type="password" placeholder="Nueva contraseña" value={pass1} onChange={e => setPass1(e.target.value)} required />
+            <input type="password" placeholder="Confirmar contraseña" value={pass2} onChange={e => setPass2(e.target.value)} required />
+            <button type="submit" className="btn" disabled={cargando} style={{ width: '100%' }}>
+              {cargando ? 'Guardando...' : 'Guardar'}
+            </button>
+            {error && <div className="login-error">{error}</div>}
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordScreen({ onDone }) {
+  const [pass1, setPass1] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(false);
+  const [cargando, setCargando] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (pass1.length < 6) { setError('Mínimo 6 caracteres.'); return; }
+    if (pass1 !== pass2) { setError('Las contraseñas no coinciden.'); return; }
+    setCargando(true);
+    const { error } = await supabaseClient.auth.updateUser({ password: pass1 });
+    setCargando(false);
+    if (error) { setError(error.message); return; }
+    setOk(true);
+  };
+
+  return (
+    <div className="login-wrap">
+      <form className="login-card" onSubmit={handleSubmit}>
+        <h1>Elige tu nueva contraseña</h1>
+        <p>Veniste desde el enlace de recuperación — define una contraseña nueva para continuar.</p>
+        {ok ? (
+          <React.Fragment>
+            <div className="login-ok">Contraseña actualizada ✅</div>
+            <button type="button" onClick={onDone} style={{ marginTop: 12 }}>Ir al dashboard</button>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <input type="password" placeholder="Nueva contraseña" value={pass1} onChange={e => setPass1(e.target.value)} required />
+            <input type="password" placeholder="Confirmar contraseña" value={pass2} onChange={e => setPass2(e.target.value)} required />
+            <button type="submit" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar y continuar'}</button>
+            {error && <div className="login-error">{error}</div>}
+          </React.Fragment>
+        )}
       </form>
     </div>
   );
@@ -276,6 +408,7 @@ function Dashboard({ session, onLogout }) {
   const [search, setSearch] = useState("");
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
   const [vista, setVista] = useState('familia');
+  const [mostrarCambioPassword, setMostrarCambioPassword] = useState(false);
 
   const FAMILIA_SEGUNDA = "Productos de Segunda";
 
@@ -357,9 +490,12 @@ function Dashboard({ session, onLogout }) {
         </div>
         <div style={{display:'flex', gap:8}}>
           <button onClick={fetchData} className="btn">↻ Sincronizar</button>
+          <button onClick={() => setMostrarCambioPassword(true)} className="btn">🔑 Cambiar contraseña</button>
           <button onClick={onLogout} className="btn">Cerrar sesión</button>
         </div>
       </div>
+
+      {mostrarCambioPassword && <ChangePasswordModal onClose={() => setMostrarCambioPassword(false)} />}
 
       {error && <div className="error-msg">⚠️ {error}</div>}
 
@@ -423,6 +559,7 @@ function ProduccionView({ session, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [mostrarCambioPassword, setMostrarCambioPassword] = useState(false);
 
   const fetchData = () => {
     setLoading(true);
@@ -456,9 +593,12 @@ function ProduccionView({ session, onLogout }) {
         </div>
         <div style={{display:'flex', gap:8}}>
           <button onClick={fetchData} className="btn">↻ Sincronizar</button>
+          <button onClick={() => setMostrarCambioPassword(true)} className="btn">🔑 Cambiar contraseña</button>
           <button onClick={onLogout} className="btn">Cerrar sesión</button>
         </div>
       </div>
+
+      {mostrarCambioPassword && <ChangePasswordModal onClose={() => setMostrarCambioPassword(false)} />}
 
       {error && <div className="error-msg">⚠️ {error}</div>}
 
@@ -508,6 +648,7 @@ function App() {
   const [session, setSession] = useState(null);
   const [rol, setRol] = useState(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [enRecuperacion, setEnRecuperacion] = useState(false);
 
   const cargarPerfil = async (s) => {
     if (!s) { setRol(null); return; }
@@ -526,6 +667,7 @@ function App() {
       setCargandoSesion(false);
     });
     const { data: listener } = supabaseClient.auth.onAuthStateChange(async (_event, s) => {
+      if (_event === 'PASSWORD_RECOVERY') setEnRecuperacion(true);
       setSession(s);
       await cargarPerfil(s);
     });
@@ -533,6 +675,7 @@ function App() {
   }, []);
 
   if (cargandoSesion) return <div className="loading">Cargando...</div>;
+  if (enRecuperacion) return <ResetPasswordScreen onDone={() => setEnRecuperacion(false)} />;
   if (!session) return <LoginScreen onLoggedIn={setSession} />;
 
   const onLogout = () => supabaseClient.auth.signOut();
