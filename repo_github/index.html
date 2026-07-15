@@ -418,17 +418,116 @@ function Dashboard({ session, onLogout }) {
   );
 }
 
+function ProduccionView({ session, onLogout }) {
+  const [pendientes, setPendientes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+
+  const fetchData = () => {
+    setLoading(true);
+    setError(null);
+    cargarDashboard()
+      .then(res => {
+        const faltantes = res.productos
+          .filter(p => p.familia !== "Productos de Segunda" && p.stockTotal > 0 && p.restante > 0)
+          .sort((a, b) => b.restante - a.restante);
+        setPendientes(faltantes);
+        setLoading(false);
+      })
+      .catch(err => { setError(err.message); setLoading(false); });
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const filtrados = useMemo(() => {
+    const term = search.toLowerCase();
+    return pendientes.filter(p =>
+      p.producto.toLowerCase().includes(term) || p.codigo.toLowerCase().includes(term)
+    );
+  }, [pendientes, search]);
+
+  return (
+    <div className="main">
+      <div className="header">
+        <div>
+          <div className="title">Qué falta fabricar</div>
+          <div className="subtitle">{session.user.email} · Solo productos con stock objetivo pendiente</div>
+        </div>
+        <div style={{display:'flex', gap:8}}>
+          <button onClick={fetchData} className="btn">↻ Sincronizar</button>
+          <button onClick={onLogout} className="btn">Cerrar sesión</button>
+        </div>
+      </div>
+
+      {error && <div className="error-msg">⚠️ {error}</div>}
+
+      <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loading ? (
+        <div className="loading">CARGANDO...</div>
+      ) : filtrados.length === 0 ? (
+        <div className="loading">🎉 Todo al día — no hay pendientes de fabricación.</div>
+      ) : (
+        <div className="familia-section">
+          <div className="familia-head" style={{ backgroundColor: "#334155" }}>
+            <div className="familia-icon">🏭</div>
+            <div>
+              <div className="familia-name">Pendientes de fabricación</div>
+              <div className="familia-count">{filtrados.length} productos</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style={{width:'60%'}}>Producto</th>
+                <th style={{width:'40%', textAlign:'right'}}>Restante a fabricar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map((p, idx) => (
+                <tr key={idx}>
+                  <td>
+                    <div className="prod-name">{p.producto}</div>
+                    <div className="mono">{p.codigo}</div>
+                  </td>
+                  <td style={{textAlign:'right'}}>
+                    <span className="restante-falta" style={{fontSize:16}}>{p.restante}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [session, setSession] = useState(null);
+  const [rol, setRol] = useState(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
 
+  const cargarPerfil = async (s) => {
+    if (!s) { setRol(null); return; }
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('rol')
+      .eq('id', s.user.id)
+      .single();
+    setRol(error ? 'vendedor' : (data.rol || 'vendedor'));
+  };
+
   useEffect(() => {
-    supabaseClient.auth.getSession().then(({ data }) => {
+    supabaseClient.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
+      await cargarPerfil(data.session);
       setCargandoSesion(false);
     });
-    const { data: listener } = supabaseClient.auth.onAuthStateChange((_event, s) => {
+    const { data: listener } = supabaseClient.auth.onAuthStateChange(async (_event, s) => {
       setSession(s);
+      await cargarPerfil(s);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -436,7 +535,13 @@ function App() {
   if (cargandoSesion) return <div className="loading">Cargando...</div>;
   if (!session) return <LoginScreen onLoggedIn={setSession} />;
 
-  return <Dashboard session={session} onLogout={() => supabaseClient.auth.signOut()} />;
+  const onLogout = () => supabaseClient.auth.signOut();
+
+  if (rol === 'produccion') {
+    return <ProduccionView session={session} onLogout={onLogout} />;
+  }
+
+  return <Dashboard session={session} onLogout={onLogout} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
