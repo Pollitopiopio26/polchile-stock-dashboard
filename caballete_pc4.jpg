@@ -1,0 +1,33 @@
+function diagnosticoStockVendido() {
+  const ss = SpreadsheetApp.openById(SS_ID);
+  const hoja = ss.getSheetByName('Stock Vendido');
+  if (!hoja) {
+    Logger.log('❌ No existe una pestaña llamada exactamente "Stock Vendido". Revisa el nombre exacto de la pestaña.');
+    return;
+  }
+
+  const data = hoja.getDataRange().getValues();
+  Logger.log('Total de filas en la hoja (incluye encabezado): ' + data.length);
+
+  const headersOriginales = data[0];
+  Logger.log('Encabezados tal cual están en la hoja: ' + JSON.stringify(headersOriginales));
+
+  const headersLower = headersOriginales.map(function(h){ return h.toString().trim().toLowerCase(); });
+  Logger.log('Encabezados normalizados (minúscula/trim): ' + JSON.stringify(headersLower));
+
+  Logger.log('---- Posiciones encontradas ----');
+  Logger.log('nota_de_venta   -> índice ' + headersLower.indexOf('nota_de_venta'));
+  Logger.log('bodega_id       -> índice ' + headersLower.indexOf('bodega_id'));
+  Logger.log('bodega_nombre   -> índice ' + headersLower.indexOf('bodega_nombre'));
+  Logger.log('codigo_de_prod  -> índice ' + headersLower.indexOf('codigo_de_prod'));
+  Logger.log('descripcion     -> índice ' + headersLower.indexOf('descripcion'));
+  Logger.log('unidmed         -> índice ' + headersLower.indexOf('unidmed'));
+  Logger.log('q_solicitado    -> índice ' + headersLower.indexOf('q_solicitado'));
+  Logger.log('valor_total     -> índice ' + headersLower.indexOf('valor_total'));
+  Logger.log('fecha_nv        -> índice ' + headersLower.indexOf('fecha_nv'));
+
+  if (data.length > 1) {
+    Logger.log('---- Primera fila de datos (fila 2) ----');
+    Logger.log(JSON.stringify(data[1]));
+  }
+}
