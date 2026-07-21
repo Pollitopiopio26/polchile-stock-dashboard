@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock por Familias · Polchile</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #F4F3EF; --surface: #FFFFFF; --text: #18181A; --text-2: #5C5B58; --text-3: #9A9894;
+    --border: rgba(0,0,0,0.08);
+    --ok: #16a34a; --bad: #C94F28;
+    --fam-a: #6B62D4; --fam-b: #0284c7; --fam-c: #ea580c;
+    --r: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Helvetica, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; padding: 24px 30px; }
+  .main { max-width: 1240px; margin: 0 auto; }
+  .header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  .title { font-size: 21px; font-weight: 600; }
+  .subtitle { color: var(--text-3); margin-top: 2px; }
+  .btn { padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-weight: bold; }
+  .btn:hover { background: #eee; }
+  .search { width:100%; padding: 12px 16px; font-size: 14px; border: 2px solid var(--border); border-radius: var(--r); margin-bottom: 14px; outline:none; }
+  .search:focus { border-color: var(--fam-a); }
+  .error-msg { background: var(--bad); color:#fff; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-weight:bold; }
+
+  .bodega-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 20px; }
+  .bodega-tab { padding: 7px 14px; background: var(--surface); border:1px solid var(--border); border-radius: 20px; cursor:pointer; font-size:12px; font-weight:600; color: var(--text-2); }
+  .bodega-tab.active { background: var(--text); color:#fff; border-color: var(--text); }
+  .bodega-tab.active.segunda { background: #b45309; border-color: #b45309; }
+
+  .familia-section { margin-bottom: 26px; background: var(--surface); border-radius: var(--r); border:1px solid var(--border); overflow:hidden; }
+  .familia-head { display:flex; align-items:center; gap:14px; padding: 14px 18px; color:#fff; }
+  .familia-icon { width:44px; height:44px; border-radius:8px; background:rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+  .familia-name { font-size:15px; font-weight:700; letter-spacing:0.3px; }
+  .familia-count { font-size:11px; opacity:0.85; }
+
+  table { width:100%; border-collapse: collapse; }
+  th { font-size:10px; text-transform:uppercase; color:var(--text-3); text-align:left; padding:10px 14px; border-bottom:1px solid var(--border); background:#fafafa; }
+  td { padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .prod-cell { display:flex; align-items:center; gap:10px; }
+  .prod-img { width:46px; height:46px; border-radius:8px; object-fit:cover; background:#eee; flex-shrink:0; cursor: zoom-in; transition: transform 0.15s; }
+  .prod-img:hover { transform: scale(1.08); }
+  .prod-name { font-weight:500; }
+  .mono { font-family: monospace; color: var(--text-2); font-size: 11px; }
+  .precio { font-weight:600; }
+  .bar-wrap { background:#eee; border-radius:6px; height:8px; width:100%; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:6px; }
+  .stock-nums { font-size:11px; color: var(--text-2); margin-top:4px; display:flex; gap:8px; }
+  .restante-ok { color: var(--ok); font-weight:bold; }
+  .restante-falta { color: var(--bad); font-weight:bold; }
+  .loading { text-align:center; padding:50px; color:var(--text-3); font-weight:bold; }
+
+  .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display:flex; align-items:center; justify-content:center; z-index: 1000; padding: 30px; }
+  .lightbox-box { background: var(--surface); border-radius: var(--r); padding: 16px; max-width: 90vw; max-height: 90vh; display:flex; flex-direction:column; align-items:center; gap: 10px; }
+  .lightbox-box img { max-width: 80vw; max-height: 70vh; border-radius: 8px; object-fit: contain; }
+  .lightbox-caption { font-weight:600; text-align:center; }
+  .lightbox-close { align-self:flex-end; background:none; border:none; font-size:20px; cursor:pointer; color: var(--text-2); }
+
+  .login-wrap { min-height: 80vh; display:flex; align-items:center; justify-content:center; }
+  .login-card { background: var(--surface); border:1px solid var(--border); border-radius: var(--r); padding: 32px; width: 100%; max-width: 360px; }
+  .login-card h1 { font-size: 18px; margin-bottom: 4px; }
+  .login-card p { color: var(--text-3); margin-bottom: 20px; font-size: 12px; }
+  .login-card input { width:100%; padding: 11px 14px; border: 2px solid var(--border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; outline:none; }
+  .login-card input:focus { border-color: var(--fam-a); }
+  .login-card button { width:100%; padding: 11px; background: var(--text); color:#fff; border:none; border-radius: 8px; font-weight:bold; cursor:pointer; font-size: 14px; }
+  .login-card .login-error { color: var(--bad); font-size: 12px; margin-top: 10px; }
+  .login-card .login-ok { color: var(--ok); font-size: 12px; margin-top: 10px; }
+  .link-btn { background:none; border:none; color: var(--fam-a); font-size: 12px; cursor:pointer; text-decoration: underline; margin-top: 4px; padding: 0; }
+  .modal-form input { width:100%; padding: 11px 14px; border: 2px solid var(--border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; outline:none; }
+  .modal-form input:focus { border-color: var(--fam-a); }
+  .modal-form p.modal-title { font-weight:700; margin-bottom: 14px; font-size: 15px; }
+
+  .kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .kpi-card { background: var(--surface); border:1px solid var(--border); border-radius: var(--r); padding: 16px 18px; }
+  .kpi-label { font-size: 11px; text-transform: uppercase; color: var(--text-3); font-weight:700; letter-spacing:0.4px; margin-bottom: 6px; }
+  .kpi-value { font-size: 22px; font-weight: 700; }
+  .chart-card { background: var(--surface); border:1px solid var(--border); border-radius: var(--r); padding: 18px; margin-bottom: 20px; }
+  .chart-card h3 { font-size: 14px; margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; }
+  .chart-wrap { position: relative; height: 320px; }
+  .toggle-mini { display:flex; gap:6px; }
+  .toggle-mini button { font-size: 11px; padding: 5px 10px; border-radius: 14px; border:1px solid var(--border); background: var(--bg); cursor:pointer; font-weight:600; color: var(--text-2); }
+  .toggle-mini button.active { background: var(--text); color:#fff; border-color: var(--text); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+  // ── Configuración de Supabase (valores públicos, seguros de exponer) ──
+  const SUPABASE_URL = 'https://ffxopvzxyeacpbtxuagu.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_7UxU-do4iR5rP7Fnx8kQiw_XqDLMaHc';
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const FAMILIAS_CONFIG = {
+  "Paneles Aislados":        { color: "var(--fam-a)", icon: "🧱" },
+  "Revestimientos Metálicos":{ color: "var(--fam-b)", icon: "🏠" },
+  "Accesorios e Instalación":{ color: "var(--fam-c)", icon: "🔩" },
+  "Productos de Segunda":    { color: "#b45309", icon: "🏷️" },
+};
+
+// Las fotos de referencia viven como archivos en /img dentro del repo,
+// nombradas igual que la columna "tipo" del catálogo (ej. img/pol_panel_4.jpg)
+function getImagen(tipo) {
+  return tipo ? `img/${tipo}.jpg` : null;
+}
+
+// Agrega "x 6 Mts" / "x 3 Mts" al nombre según cómo termina el código,
+// solo para Paneles Aislados y Revestimientos Metálicos.
+function nombreConLargo(producto, codigo, familia) {
+  if (familia !== "Paneles Aislados" && familia !== "Revestimientos Metálicos") return producto;
+  const c = (codigo || '').toUpperCase();
+  if (/6M?$/.test(c)) return producto + ' x 6 Mts';
+  if (/3M?$/.test(c)) return producto + ' x 3 Mts';
+  return producto;
+}
+
+function EspecificacionesModal({ producto, onClose }) {
+  if (!producto) return null;
+  const filas = [
+    ['Color', producto.color],
+    ['Largo', producto.largo],
+    ['Clase 1', producto.clase1],
+    ['Clase 2', producto.clase2],
+    ['Uni x Pack', producto.uniPack]
+  ];
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <div className="lightbox-box" onClick={e => e.stopPropagation()} style={{ alignItems: 'stretch', minWidth: 300 }}>
+        <button className="lightbox-close" onClick={onClose}>✕</button>
+        <p className="modal-title">{producto.producto}</p>
+        <div className="mono" style={{ marginBottom: 12 }}>{producto.codigo}</div>
+        <table>
+          <tbody>
+            {filas.map(([label, valor], idx) => (
+              <tr key={idx}>
+                <td style={{ fontWeight: 600, width: '40%' }}>{label}</td>
+                <td>{valor || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FamiliaBlock({ nombre, items, bodegaActiva, onImgClick, onSpecClick, cfgOverride }) {
+  const cfg = cfgOverride || FAMILIAS_CONFIG[nombre] || { color: "var(--text-2)", icon: "📦" };
+
+  return (
+    <div className="familia-section">
+      <div className="familia-head" style={{ backgroundColor: cfg.color }}>
+        <div className="familia-icon">{cfg.icon}</div>
+        <div>
+          <div className="familia-name">{nombre}</div>
+          <div className="familia-count">{items.length} productos</div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style={{width:'34%'}}>Producto</th>
+            <th style={{width:'12%'}}>Precio</th>
+            <th style={{width:'38%'}}>Stock (Actual / Total / Restante){bodegaActiva !== 'Todas' ? ' · ' + bodegaActiva : ''}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p, idx) => {
+            const actualMostrado = bodegaActiva === 'Todas'
+              ? p.stockActual
+              : (p.stockPorBodega[bodegaActiva] || 0);
+            const pct = p.stockTotal > 0 ? Math.min((actualMostrado / p.stockTotal) * 100, 100) : 0;
+            const cumple = p.stockTotal > 0 && actualMostrado >= p.stockTotal;
+            const img = getImagen(p.tipo);
+            return (
+              <tr key={idx}>
+                <td>
+                  <div className="prod-cell">
+                    {img ? (
+                      <img
+                        className="prod-img"
+                        src={img}
+                        onClick={() => onImgClick(img, p.producto)}
+                        onError={e => { e.target.style.visibility = 'hidden'; }}
+                      />
+                    ) : <div className="prod-img"></div>}
+                    <div>
+                      <div className="prod-name" style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+                        onClick={() => onSpecClick(p)}>
+                        {nombreConLargo(p.producto, p.codigo, p.familia)}
+                      </div>
+                      <div className="mono">{p.codigo}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="precio">
+                  {p.precio ? p.precio.toLocaleString('es-CL', {style:'currency', currency:'CLP'}) : 'Consultar'}
+                  {p.precio ? <div style={{fontSize:10, color:'var(--text-3)', fontWeight:400}}>por unidad · IVA incluido</div> : null}
+                </td>
+                <td>
+                  <div className="stock-nums">
+                    <span>Actual: <b>{actualMostrado}</b></span>
+                    <span>Total: <b>{p.stockTotal || '-'}</b></span>
+                    <span className={cumple ? "restante-ok" : "restante-falta"}>
+                      Restante: {p.stockTotal ? Math.max(p.stockTotal - actualMostrado, 0) : '-'}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Reconstruye exactamente la misma forma de datos que antes armaba Code.gs,
+// pero leyendo directo desde las 3 tablas de Supabase.
+async function cargarDashboard() {
+  const [catRes, stockRes, segRes] = await Promise.all([
+    supabaseClient.from('catalogo').select('*'),
+    supabaseClient.from('stock').select('*'),
+    supabaseClient.from('productos_segunda').select('*')
+  ]);
+
+  if (catRes.error) throw new Error('Catalogo: ' + catRes.error.message);
+  if (stockRes.error) throw new Error('Stock: ' + stockRes.error.message);
+
+  const stockPorCodigo = {};
+  const bodegasSet = {};
+  (stockRes.data || []).forEach(row => {
+    const codigo = (row.codigo || '').trim().toUpperCase();
+    if (!codigo) return;
+    const cantidad = parseFloat(row.stk_fisico) || 0;
+    const bodega = (row.bodega_nombre || 'Sin bodega').trim();
+    if (!stockPorCodigo[codigo]) stockPorCodigo[codigo] = { total: 0, bodegas: {} };
+    stockPorCodigo[codigo].total += cantidad;
+    stockPorCodigo[codigo].bodegas[bodega] = (stockPorCodigo[codigo].bodegas[bodega] || 0) + cantidad;
+    bodegasSet[bodega] = true;
+  });
+
+  const productos = (catRes.data || []).map(row => {
+    const codigo = (row.codigo || '').trim();
+    const info = stockPorCodigo[codigo.toUpperCase()] || { total: 0, bodegas: {} };
+    const total = parseFloat(row.stock_total) || 0;
+    return {
+      codigo,
+      producto: row.producto || '',
+      familia: row.familia || 'Sin familia',
+      tipo: row.tipo || '',
+      precio: parseFloat(row.precio) || 0,
+      stockActual: info.total,
+      stockPorBodega: info.bodegas,
+      stockTotal: total,
+      restante: Math.max(total - info.total, 0),
+      color: row.color || '',
+      largo: row.largo || '',
+      clase1: row.clase1 || '',
+      clase2: row.clase2 || '',
+      uniPack: row.uni_pack || ''
+    };
+  });
+
+  const segundaPorCodigo = {};
+  (segRes.data || []).forEach(row => {
+    const codigo = (row.codigo || '').trim().toUpperCase();
+    if (!codigo) return;
+    const cantidad = parseFloat(row.stk_fisico) || 0;
+    const bodega = (row.bodega_nombre || 'Bodega de segunda').trim();
+    if (!segundaPorCodigo[codigo]) segundaPorCodigo[codigo] = { nombre: '', bodegas: {} };
+    segundaPorCodigo[codigo].bodegas[bodega] = (segundaPorCodigo[codigo].bodegas[bodega] || 0) + cantidad;
+    if (row.nombre) segundaPorCodigo[codigo].nombre = row.nombre;
+  });
+  Object.keys(segundaPorCodigo).forEach(codigoUpper => {
+    const info = segundaPorCodigo[codigoUpper];
+    const totalEnBodegas = Object.keys(info.bodegas).reduce((sum, b) => sum + info.bodegas[b], 0);
+    productos.push({
+      codigo: codigoUpper,
+      producto: info.nombre || codigoUpper,
+      familia: 'Productos de Segunda',
+      tipo: '',
+      precio: 0,
+      stockActual: totalEnBodegas,
+      stockPorBodega: info.bodegas,
+      stockTotal: 0,
+      restante: 0
+    });
+  });
+
+  return { productos, bodegas: Object.keys(bodegasSet).sort() };
+}
+
+function LoginScreen({ onLoggedIn }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [modoRecuperar, setModoRecuperar] = useState(false);
+  const [recuperarOk, setRecuperarOk] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setCargando(true);
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    setCargando(false);
+    if (error) { setError('Correo o contraseña incorrectos.'); return; }
+    onLoggedIn(data.session);
+  };
+
+  const handleRecuperar = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setCargando(true);
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    setCargando(false);
+    if (error) { setError(error.message); return; }
+    setRecuperarOk(true);
+  };
+
+  if (modoRecuperar) {
+    return (
+      <div className="login-wrap">
+        <form className="login-card" onSubmit={handleRecuperar}>
+          <h1>Recuperar contraseña</h1>
+          <p>Te enviaremos un correo con un enlace para elegir una contraseña nueva.</p>
+          {recuperarOk ? (
+            <div className="login-ok">Listo, revisa tu correo ({email}) y sigue el enlace.</div>
+          ) : (
+            <React.Fragment>
+              <input type="email" placeholder="Correo" value={email} onChange={e => setEmail(e.target.value)} required />
+              <button type="submit" disabled={cargando}>{cargando ? 'Enviando...' : 'Enviar enlace'}</button>
+              {error && <div className="login-error">{error}</div>}
+            </React.Fragment>
+          )}
+          <button type="button" className="link-btn" onClick={() => { setModoRecuperar(false); setRecuperarOk(false); setError(null); }}>
+            ← Volver a ingresar
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="login-wrap">
+      <form className="login-card" onSubmit={handleSubmit}>
+        <h1>Control de Stock · Polchile</h1>
+        <p>Ingresa con tu cuenta para ver el dashboard.</p>
+        <input type="email" placeholder="Correo" value={email} onChange={e => setEmail(e.target.value)} required />
+        <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} required />
+        <button type="submit" disabled={cargando}>{cargando ? 'Ingresando...' : 'Ingresar'}</button>
+        {error && <div className="login-error">{error}</div>}
+        <button type="button" className="link-btn" onClick={() => setModoRecuperar(true)}>
+          ¿Olvidaste tu contraseña?
+        </button>
+      </form>
+    </div>
+  );
+
+}
+
+function ChangePasswordModal({ onClose }) {
+  const [pass1, setPass1] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(false);
+  const [cargando, setCargando] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (pass1.length < 6) { setError('Mínimo 6 caracteres.'); return; }
+    if (pass1 !== pass2) { setError('Las contraseñas no coinciden.'); return; }
+    setCargando(true);
+    const { error } = await supabaseClient.auth.updateUser({ password: pass1 });
+    setCargando(false);
+    if (error) { setError(error.message); return; }
+    setOk(true);
+  };
+
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <div className="lightbox-box" onClick={e => e.stopPropagation()} style={{ alignItems: 'stretch', minWidth: 300 }}>
+        <button className="lightbox-close" onClick={onClose}>✕</button>
+        {ok ? (
+          <div>
+            <p className="modal-title">Contraseña actualizada ✅</p>
+            <button className="btn" onClick={onClose} style={{ width: '100%' }}>Cerrar</button>
+          </div>
+        ) : (
+          <form className="modal-form" onSubmit={handleSubmit}>
+            <p className="modal-title">Cambiar contraseña</p>
+            <input type="password" placeholder="Nueva contraseña" value={pass1} onChange={e => setPass1(e.target.value)} required />
+            <input type="password" placeholder="Confirmar contraseña" value={pass2} onChange={e => setPass2(e.target.value)} required />
+            <button type="submit" className="btn" disabled={cargando} style={{ width: '100%' }}>
+              {cargando ? 'Guardando...' : 'Guardar'}
+            </button>
+            {error && <div className="login-error">{error}</div>}
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordScreen({ onDone }) {
+  const [pass1, setPass1] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(false);
+  const [cargando, setCargando] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (pass1.length < 6) { setError('Mínimo 6 caracteres.'); return; }
+    if (pass1 !== pass2) { setError('Las contraseñas no coinciden.'); return; }
+    setCargando(true);
+    const { error } = await supabaseClient.auth.updateUser({ password: pass1 });
+    setCargando(false);
+    if (error) { setError(error.message); return; }
+    setOk(true);
+  };
+
+  return (
+    <div className="login-wrap">
+      <form className="login-card" onSubmit={handleSubmit}>
+        <h1>Elige tu nueva contraseña</h1>
+        <p>Veniste desde el enlace de recuperación — define una contraseña nueva para continuar.</p>
+        {ok ? (
+          <React.Fragment>
+            <div className="login-ok">Contraseña actualizada ✅</div>
+            <button type="button" onClick={onDone} style={{ marginTop: 12 }}>Ir al dashboard</button>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <input type="password" placeholder="Nueva contraseña" value={pass1} onChange={e => setPass1(e.target.value)} required />
+            <input type="password" placeholder="Confirmar contraseña" value={pass2} onChange={e => setPass2(e.target.value)} required />
+            <button type="submit" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar y continuar'}</button>
+            {error && <div className="login-error">{error}</div>}
+          </React.Fragment>
+        )}
+      </form>
+    </div>
+  );
+}
+
+// Wrapper mínimo sobre Chart.js (canvas imperativo), sin depender de
+// react-chartjs-2 para no necesitar un bundler.
+function ChartCanvas({ type, data, options }) {
+  const canvasRef = React.useRef(null);
+  const chartRef = React.useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, { type, data, options });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [type, data, options]);
+
+  return (
+    <div className="chart-wrap">
+      <canvas ref={canvasRef}></canvas>
+    </div>
+  );
+}
+
+const PALETA = ["#6B62D4", "#0284c7", "#ea580c", "#16a34a", "#b45309", "#C94F28", "#334155", "#9A9894"];
+
+function VentasAdminView() {
+  const [ventas, setVentas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [metricaTop, setMetricaTop] = useState('valor'); // 'valor' | 'cantidad'
+
+  const fetchData = () => {
+    setLoading(true);
+    setError(null);
+    supabaseClient.from('ventas').select('*')
+      .then(({ data, error }) => {
+        if (error) { setError(error.message); setLoading(false); return; }
+        setVentas(data || []);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const datosFiltrados = useMemo(() => {
+    const term = search.toLowerCase();
+    if (!term) return ventas;
+    return ventas.filter(v =>
+      (v.descripcion || '').toLowerCase().includes(term) ||
+      (v.codigo || '').toLowerCase().includes(term)
+    );
+  }, [ventas, search]);
+
+  // Agregación por producto
+  const porProducto = useMemo(() => {
+    const map = {};
+    datosFiltrados.forEach(v => {
+      const codigo = v.codigo;
+      if (!map[codigo]) map[codigo] = { codigo, descripcion: v.descripcion || codigo, cantidad: 0, valor: 0 };
+      map[codigo].cantidad += parseFloat(v.cantidad) || 0;
+      map[codigo].valor += parseFloat(v.valor_total) || 0;
+    });
+    return Object.values(map).sort((a, b) => b[metricaTop] - a[metricaTop]);
+  }, [datosFiltrados, metricaTop]);
+
+  // Agregación mensual
+  const porMes = useMemo(() => {
+    const map = {};
+    datosFiltrados.forEach(v => {
+      if (!v.fecha) return;
+      const mes = String(v.fecha).slice(0, 7); // YYYY-MM
+      if (!map[mes]) map[mes] = { mes, valor: 0, cantidad: 0 };
+      map[mes].valor += parseFloat(v.valor_total) || 0;
+      map[mes].cantidad += parseFloat(v.cantidad) || 0;
+    });
+    return Object.values(map).sort((a, b) => a.mes.localeCompare(b.mes));
+  }, [datosFiltrados]);
+
+  // Agregación por bodega
+  const porBodega = useMemo(() => {
+    const map = {};
+    datosFiltrados.forEach(v => {
+      const b = v.bodega_nombre || 'Sin bodega';
+      map[b] = (map[b] || 0) + (parseFloat(v.valor_total) || 0);
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [datosFiltrados]);
+
+  const kpis = useMemo(() => {
+    const totalValor = datosFiltrados.reduce((s, v) => s + (parseFloat(v.valor_total) || 0), 0);
+    const totalCantidad = datosFiltrados.reduce((s, v) => s + (parseFloat(v.cantidad) || 0), 0);
+    const notasUnicas = new Set(datosFiltrados.map(v => v.nota_de_venta)).size;
+    const ticketProm = notasUnicas > 0 ? totalValor / notasUnicas : 0;
+    return { totalValor, totalCantidad, notasUnicas, ticketProm };
+  }, [datosFiltrados]);
+
+  const fmtCLP = (n) => n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+
+  const top15 = porProducto.slice(0, 15);
+
+  const dataTop = {
+    labels: top15.map(p => p.descripcion.length > 22 ? p.descripcion.slice(0, 22) + '…' : p.descripcion),
+    datasets: [{
+      label: metricaTop === 'valor' ? 'Ventas ($)' : 'Unidades vendidas',
+      data: top15.map(p => metricaTop === 'valor' ? p.valor : p.cantidad),
+      backgroundColor: '#6B62D4',
+      borderRadius: 6
+    }]
+  };
+
+  const dataMes = {
+    labels: porMes.map(m => m.mes),
+    datasets: [{
+      label: 'Ventas mensuales ($)',
+      data: porMes.map(m => m.valor),
+      borderColor: '#0284c7',
+      backgroundColor: 'rgba(2,132,199,0.12)',
+      fill: true,
+      tension: 0.3
+    }]
+  };
+
+  const dataBodega = {
+    labels: porBodega.map(([b]) => b),
+    datasets: [{
+      data: porBodega.map(([, v]) => v),
+      backgroundColor: PALETA
+    }]
+  };
+
+  const optsBar = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    indexAxis: 'y'
+  };
+  const optsLine = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } }
+  };
+  const optsPie = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'right' } }
+  };
+
+  return (
+    <React.Fragment>
+      {error && <div className="error-msg">⚠️ {error}</div>}
+
+      <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loading ? (
+        <div className="loading">CARGANDO VENTAS...</div>
+      ) : datosFiltrados.length === 0 ? (
+        <div className="loading">Sin datos de ventas todavía.</div>
+      ) : (
+        <React.Fragment>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-label">Ventas totales</div>
+              <div className="kpi-value">{fmtCLP(kpis.totalValor)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Unidades vendidas</div>
+              <div className="kpi-value">{kpis.totalCantidad.toLocaleString('es-CL')}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">N° notas de venta</div>
+              <div className="kpi-value">{kpis.notasUnicas.toLocaleString('es-CL')}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Ticket promedio</div>
+              <div className="kpi-value">{fmtCLP(kpis.ticketProm)}</div>
+            </div>
+          </div>
+
+          <div className="chart-card">
+            <h3>
+              <span>Top 15 productos más vendidos</span>
+              <div className="toggle-mini">
+                <button className={metricaTop === 'valor' ? 'active' : ''} onClick={() => setMetricaTop('valor')}>Por $</button>
+                <button className={metricaTop === 'cantidad' ? 'active' : ''} onClick={() => setMetricaTop('cantidad')}>Por unidades</button>
+              </div>
+            </h3>
+            <ChartCanvas type="bar" data={dataTop} options={optsBar} />
+          </div>
+
+          <div className="chart-card">
+            <h3>Ventas mensuales ($)</h3>
+            <ChartCanvas type="line" data={dataMes} options={optsLine} />
+          </div>
+
+          <div className="chart-card">
+            <h3>Ventas por bodega ($)</h3>
+            <ChartCanvas type="doughnut" data={dataBodega} options={optsPie} />
+          </div>
+
+          <div className="familia-section">
+            <div className="familia-head" style={{ backgroundColor: "#334155" }}>
+              <div className="familia-icon">🏆</div>
+              <div>
+                <div className="familia-name">Ranking completo</div>
+                <div className="familia-count">{porProducto.length} productos</div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{width:'50%'}}>Producto</th>
+                  <th style={{width:'20%', textAlign:'right'}}>Unidades</th>
+                  <th style={{width:'30%', textAlign:'right'}}>Ventas ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porProducto.map((p, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <div className="prod-name">{p.descripcion}</div>
+                      <div className="mono">{p.codigo}</div>
+                    </td>
+                    <td style={{textAlign:'right'}}>{p.cantidad.toLocaleString('es-CL')}</td>
+                    <td style={{textAlign:'right', fontWeight:600}}>{fmtCLP(p.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </React.Fragment>
+      )}
+    </React.Fragment>
+  );
+}
+
+function Dashboard({ session, onLogout, rol }) {
+  const [productos, setProductos] = useState([]);
+  const [bodegas, setBodegas] = useState([]);
+  const [bodegaActiva, setBodegaActiva] = useState('Todas');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [imagenAmpliada, setImagenAmpliada] = useState(null);
+  const [especModal, setEspecModal] = useState(null);
+  const [vista, setVista] = useState('familia');
+  const [mostrarCambioPassword, setMostrarCambioPassword] = useState(false);
+
+  const FAMILIA_SEGUNDA = "Productos de Segunda";
+
+  const fetchData = () => {
+    setLoading(true);
+    setError(null);
+    cargarDashboard()
+      .then(res => {
+        setProductos(res.productos);
+        setBodegas(res.bodegas);
+        setLoading(false);
+      })
+      .catch(err => { setError(err.message); setLoading(false); });
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const familiasAgrupadas = useMemo(() => {
+    const term = search.toLowerCase();
+    const filtrado = productos.filter(p =>
+      p.familia !== FAMILIA_SEGUNDA &&
+      (p.producto.toLowerCase().includes(term) || p.codigo.toLowerCase().includes(term))
+    );
+    const grupos = {};
+    filtrado.forEach(p => {
+      if (!grupos[p.familia]) grupos[p.familia] = [];
+      grupos[p.familia].push(p);
+    });
+    return grupos;
+  }, [productos, search]);
+
+  const bodegasAgrupadas = useMemo(() => {
+    const term = search.toLowerCase();
+    const filtrado = productos.filter(p =>
+      p.familia !== FAMILIA_SEGUNDA &&
+      (p.producto.toLowerCase().includes(term) || p.codigo.toLowerCase().includes(term))
+    );
+    const grupos = {};
+    bodegas.forEach(b => { grupos[b] = []; });
+    filtrado.forEach(p => {
+      Object.keys(p.stockPorBodega).forEach(b => {
+        if ((p.stockPorBodega[b] || 0) > 0) {
+          if (!grupos[b]) grupos[b] = [];
+          grupos[b].push(p);
+        }
+      });
+    });
+    Object.keys(grupos).forEach(b => { if (grupos[b].length === 0) delete grupos[b]; });
+    return grupos;
+  }, [productos, bodegas, search]);
+
+  const productosSegunda = useMemo(() => {
+    const term = search.toLowerCase();
+    return productos.filter(p =>
+      p.familia === FAMILIA_SEGUNDA &&
+      (p.producto.toLowerCase().includes(term) || p.codigo.toLowerCase().includes(term))
+    );
+  }, [productos, search]);
+
+  const segundaAgrupadaPorBodega = useMemo(() => {
+    const grupos = {};
+    productosSegunda.forEach(p => {
+      Object.keys(p.stockPorBodega).forEach(b => {
+        if ((p.stockPorBodega[b] || 0) > 0) {
+          if (!grupos[b]) grupos[b] = [];
+          grupos[b].push(p);
+        }
+      });
+    });
+    return grupos;
+  }, [productosSegunda]);
+
+  return (
+    <div className="main">
+      <div className="header">
+        <div>
+          <div className="title">Control de Stock por Familias</div>
+          <div className="subtitle">{session.user.email} · Actual, objetivo y restante · por bodega · con precios</div>
+        </div>
+        <div style={{display:'flex', gap:8}}>
+          <button onClick={fetchData} className="btn">↻ Sincronizar</button>
+          <button onClick={() => setMostrarCambioPassword(true)} className="btn">🔑 Cambiar contraseña</button>
+          <button onClick={onLogout} className="btn">Cerrar sesión</button>
+        </div>
+      </div>
+
+      {mostrarCambioPassword && <ChangePasswordModal onClose={() => setMostrarCambioPassword(false)} />}
+
+      {error && <div className="error-msg">⚠️ {error}</div>}
+
+      <div className="bodega-tabs">
+        <div className={"bodega-tab" + (vista === 'familia' ? ' active' : '')} onClick={() => setVista('familia')}>📦 Vista por Familia</div>
+        <div className={"bodega-tab" + (vista === 'bodega' ? ' active' : '')} onClick={() => setVista('bodega')}>🏬 Vista por Bodega</div>
+        <div className={"bodega-tab" + (vista === 'segunda' ? ' active segunda' : '')} onClick={() => setVista('segunda')}>🏷️ Productos de Segunda</div>
+        {rol === 'admin' && (
+          <div className={"bodega-tab" + (vista === 'ventas' ? ' active' : '')} onClick={() => setVista('ventas')}>📊 Análisis de Ventas</div>
+        )}
+      </div>
+
+      {vista === 'familia' && (
+        <div className="bodega-tabs">
+          <div className={"bodega-tab" + (bodegaActiva === 'Todas' ? ' active' : '')} onClick={() => setBodegaActiva('Todas')}>Todas las bodegas</div>
+          {bodegas.map(b => (
+            <div key={b} className={"bodega-tab" + (bodegaActiva === b ? ' active' : '')} onClick={() => setBodegaActiva(b)}>{b}</div>
+          ))}
+        </div>
+      )}
+
+      {vista === 'ventas' && rol === 'admin' ? (
+        <VentasAdminView />
+      ) : (
+        <React.Fragment>
+          <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+
+          {loading ? (
+            <div className="loading">CARGANDO STOCK...</div>
+          ) : vista === 'familia' ? (
+            ["Paneles Aislados", "Revestimientos Metálicos", "Accesorios e Instalación"]
+              .filter(fam => familiasAgrupadas[fam])
+              .concat(Object.keys(familiasAgrupadas).filter(fam =>
+                !["Paneles Aislados", "Revestimientos Metálicos", "Accesorios e Instalación"].includes(fam)
+              ))
+              .map(fam => (
+                <FamiliaBlock key={fam} nombre={fam} items={familiasAgrupadas[fam]} bodegaActiva={bodegaActiva}
+                  onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })}
+                  onSpecClick={p => setEspecModal(p)} />
+              ))
+          ) : vista === 'bodega' ? (
+            Object.keys(bodegasAgrupadas).map(bod => (
+              <FamiliaBlock key={bod} nombre={bod} items={bodegasAgrupadas[bod]} bodegaActiva={bod}
+                cfgOverride={{ color: "#334155", icon: "🏬" }}
+                onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })}
+                onSpecClick={p => setEspecModal(p)} />
+            ))
+          ) : (
+            Object.keys(segundaAgrupadaPorBodega).length > 0 ? (
+              Object.keys(segundaAgrupadaPorBodega).map(bod => (
+                <FamiliaBlock key={bod} nombre={bod} items={segundaAgrupadaPorBodega[bod]} bodegaActiva={bod}
+                  cfgOverride={{ color: "#b45309", icon: "🏷️" }}
+                  onImgClick={(src, nombre) => setImagenAmpliada({ src, nombre })}
+                  onSpecClick={p => setEspecModal(p)} />
+              ))
+            ) : (
+              <div className="loading">Sin productos de segunda por ahora.</div>
+            )
+          )}
+        </React.Fragment>
+      )}
+
+      {imagenAmpliada && (
+        <div className="lightbox-overlay" onClick={() => setImagenAmpliada(null)}>
+          <div className="lightbox-box" onClick={e => e.stopPropagation()}>
+            <button className="lightbox-close" onClick={() => setImagenAmpliada(null)}>✕</button>
+            <img src={imagenAmpliada.src} />
+            <div className="lightbox-caption">{imagenAmpliada.nombre}</div>
+          </div>
+        </div>
+      )}
+
+      {especModal && <EspecificacionesModal producto={especModal} onClose={() => setEspecModal(null)} />}
+    </div>
+  );
+}
+
+function ProduccionView({ session, onLogout }) {
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [mostrarCambioPassword, setMostrarCambioPassword] = useState(false);
+  const [especModal, setEspecModal] = useState(null);
+
+  const fetchData = () => {
+    setLoading(true);
+    setError(null);
+    cargarDashboard()
+      .then(res => {
+        const primeraCalidad = res.productos.filter(p => p.familia !== "Productos de Segunda");
+        setProductos(primeraCalidad);
+        setLoading(false);
+      })
+      .catch(err => { setError(err.message); setLoading(false); });
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const filtrados = useMemo(() => {
+    const term = search.toLowerCase();
+    return productos.filter(p =>
+      p.producto.toLowerCase().includes(term) || p.codigo.toLowerCase().includes(term)
+    );
+  }, [productos, search]);
+
+  const pendientes = useMemo(() =>
+    filtrados
+      .filter(p => p.stockTotal > 0 && p.restante > 0)
+      .sort((a, b) => b.restante - a.restante),
+  [filtrados]);
+
+  const ORDEN_FAMILIAS = ["Paneles Aislados", "Revestimientos Metálicos", "Accesorios e Instalación"];
+
+  const valorizacion = useMemo(() =>
+    filtrados
+      .map(p => ({ ...p, valorTotal: (parseFloat(p.precio) || 0) * (p.stockActual || 0) }))
+      .sort((a, b) => {
+        const ordenA = ORDEN_FAMILIAS.indexOf(a.familia);
+        const ordenB = ORDEN_FAMILIAS.indexOf(b.familia);
+        if (ordenA !== ordenB) return (ordenA === -1 ? 99 : ordenA) - (ordenB === -1 ? 99 : ordenB);
+        return b.valorTotal - a.valorTotal;
+      }),
+  [filtrados]);
+
+  const valorInventarioTotal = useMemo(() =>
+    valorizacion.reduce((sum, p) => sum + p.valorTotal, 0),
+  [valorizacion]);
+
+  const fmtCLP = (n) => n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+
+  return (
+    <div className="main">
+      <div className="header">
+        <div>
+          <div className="title">Qué falta fabricar</div>
+          <div className="subtitle">{session.user.email} · Stock, valorización y pendientes de fabricación</div>
+        </div>
+        <div style={{display:'flex', gap:8}}>
+          <button onClick={fetchData} className="btn">↻ Sincronizar</button>
+          <button onClick={() => setMostrarCambioPassword(true)} className="btn">🔑 Cambiar contraseña</button>
+          <button onClick={onLogout} className="btn">Cerrar sesión</button>
+        </div>
+      </div>
+
+      {mostrarCambioPassword && <ChangePasswordModal onClose={() => setMostrarCambioPassword(false)} />}
+
+      {error && <div className="error-msg">⚠️ {error}</div>}
+
+      <input className="search" placeholder="Buscar por producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+
+      {loading ? (
+        <div className="loading">CARGANDO...</div>
+      ) : (
+        <React.Fragment>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-label">Valor total en stock</div>
+              <div className="kpi-value">{fmtCLP(valorInventarioTotal)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Productos con stock</div>
+              <div className="kpi-value">{valorizacion.filter(p => p.stockActual > 0).length}</div>
+            </div>
+          </div>
+
+          <div className="familia-section">
+            <div className="familia-head" style={{ backgroundColor: "#0284c7" }}>
+              <div className="familia-icon">💰</div>
+              <div>
+                <div className="familia-name">Stock y valorización por producto</div>
+                <div className="familia-count">{valorizacion.length} productos</div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{width:'40%'}}>Producto</th>
+                  <th style={{width:'20%', textAlign:'right'}}>Stock actual</th>
+                  <th style={{width:'20%', textAlign:'right'}}>Precio unitario</th>
+                  <th style={{width:'20%', textAlign:'right'}}>Precio total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {valorizacion.map((p, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <div className="prod-name" style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+                        onClick={() => setEspecModal(p)}>
+                        {nombreConLargo(p.producto, p.codigo, p.familia)}
+                      </div>
+                      <div className="mono">{p.codigo}</div>
+                    </td>
+                    <td style={{textAlign:'right'}}>{p.stockActual}</td>
+                    <td style={{textAlign:'right'}}>
+                      {p.precio ? fmtCLP(p.precio) : 'Consultar'}
+                      {p.precio ? <div style={{fontSize:10, color:'var(--text-3)', fontWeight:400}}>por unidad · IVA incluido</div> : null}
+                    </td>
+                    <td style={{textAlign:'right', fontWeight:600}}>{p.precio ? fmtCLP(p.valorTotal) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </React.Fragment>
+      )}
+
+      {loading ? null : pendientes.length === 0 ? (
+        <div className="loading" style={{marginTop:20}}>🎉 Todo al día — no hay pendientes de fabricación.</div>
+      ) : (
+        <div className="familia-section" style={{marginTop:20}}>
+          <div className="familia-head" style={{ backgroundColor: "#334155" }}>
+            <div className="familia-icon">🏭</div>
+            <div>
+              <div className="familia-name">Pendientes de fabricación</div>
+              <div className="familia-count">{pendientes.length} productos</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style={{width:'60%'}}>Producto</th>
+                <th style={{width:'40%', textAlign:'right'}}>Restante a fabricar</th>
+              </tr>
+            </thead>
+            <tbody>
+
+              {pendientes.map((p, idx) => (
+                <tr key={idx}>
+                  <td>
+                    <div className="prod-name" style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+                      onClick={() => setEspecModal(p)}>
+                      {nombreConLargo(p.producto, p.codigo, p.familia)}
+                    </div>
+                    <div className="mono">{p.codigo}</div>
+                  </td>
+                  <td style={{textAlign:'right'}}>
+                    <span className="restante-falta" style={{fontSize:16}}>{p.restante}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {especModal && <EspecificacionesModal producto={especModal} onClose={() => setEspecModal(null)} />}
+    </div>
+  );
+}
+
+function App() {
+  const [session, setSession] = useState(null);
+  const [rol, setRol] = useState(null);
+  const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [enRecuperacion, setEnRecuperacion] = useState(false);
+
+  const cargarPerfil = async (s) => {
+    if (!s) { setRol(null); return; }
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('rol')
+      .eq('id', s.user.id)
+      .single();
+    setRol(error ? 'vendedor' : (data.rol || 'vendedor'));
+  };
+
+  useEffect(() => {
+    supabaseClient.auth.getSession().then(async ({ data }) => {
+      setSession(data.session);
+      await cargarPerfil(data.session);
+      setCargandoSesion(false);
+    });
+    const { data: listener } = supabaseClient.auth.onAuthStateChange(async (_event, s) => {
+      if (_event === 'PASSWORD_RECOVERY') setEnRecuperacion(true);
+      setSession(s);
+      await cargarPerfil(s);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (cargandoSesion) return <div className="loading">Cargando...</div>;
+  if (enRecuperacion) return <ResetPasswordScreen onDone={() => setEnRecuperacion(false)} />;
+  if (!session) return <LoginScreen onLoggedIn={setSession} />;
+
+  const onLogout = () => supabaseClient.auth.signOut();
+
+  if (rol === 'produccion') {
+    return <ProduccionView session={session} onLogout={onLogout} />;
+  }
+
+  return <Dashboard session={session} onLogout={onLogout} rol={rol} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
